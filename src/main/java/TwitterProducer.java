@@ -15,22 +15,23 @@ import org.apache.kafka.common.serialization.StringSerializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.awt.*;
+import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 public class TwitterProducer {
     private final Logger logger = LoggerFactory.getLogger(TwitterProducer.class.getName());
 
-    public TwitterProducer() {}
+    private TwitterProducer() {}
 
     public static void main(String[] args) {
         new TwitterProducer().run();
     }
 
 
-    void run() {
+    private void run() {
         // Set up your blocking queues: Be sure to size these properly based on expected TPS of your stream
         BlockingQueue<String> msgQueue = new LinkedBlockingQueue<String>(100000);
         BlockingQueue<Event> eventQueue = new LinkedBlockingQueue<Event>(1000);
@@ -45,7 +46,14 @@ public class TwitterProducer {
 
         logger.info("Twitter client connected successfully");
 
-        // stream messages from queue into Kafka
+        while(true) {
+            // stream messages from queue into Kafka
+            try {
+                logger.info(msgQueue.poll(6, TimeUnit.SECONDS));
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
 
 
     }
@@ -57,12 +65,13 @@ public class TwitterProducer {
         StatusesFilterEndpoint hosebirdEndpoint = new StatusesFilterEndpoint();
 
         // Optional: set up some followings and track terms
-//        List<Long> followings = Lists.newArrayList(1234L, 566788L);
-//        List<String> terms = Lists.newArrayList("twitter", "api");
-//        hosebirdEndpoint.followings(followings);
-//        hosebirdEndpoint.trackTerms(terms);
+        List<Long> followings = Lists.newArrayList(1234L, 566788L);
+        List<String> terms = Lists.newArrayList("corona", "coronavirus", "COVID-19", "corona virus", "social distancing", "socialdistancing");
+        hosebirdEndpoint.followings(followings);
+        hosebirdEndpoint.trackTerms(terms);
 
         // These secrets should be read from a config file
+        // TODO put in the credentials here :)
         Authentication hosebirdAuth = new OAuth1("consumerKey", "consumerSecret", "token", "secret");
 
         ClientBuilder builder = new ClientBuilder()
