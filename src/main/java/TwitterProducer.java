@@ -9,8 +9,7 @@ import com.twitter.hbc.core.endpoint.StatusesFilterEndpoint;
 import com.twitter.hbc.core.processor.StringDelimitedProcessor;
 import com.twitter.hbc.httpclient.auth.Authentication;
 import com.twitter.hbc.httpclient.auth.OAuth1;
-import org.apache.kafka.clients.producer.KafkaProducer;
-import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.clients.producer.*;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -36,6 +35,10 @@ public class TwitterProducer {
         BlockingQueue<String> msgQueue = new LinkedBlockingQueue<String>(100000);
         BlockingQueue<Event> eventQueue = new LinkedBlockingQueue<Event>(1000);
 
+        String topic = "testing_tweets_topic";
+        // TODO what should the partitioning scheme look like... round robin might be fine...
+        //  for single search term RR is fine, if multiple maybe partition by term contained in tweet
+
         logger.info("Creating Twitter client...");
 
         Client twitterClient = createTwitterClient(msgQueue, eventQueue);
@@ -46,15 +49,41 @@ public class TwitterProducer {
 
         logger.info("Twitter client connected successfully");
 
-        while(true) {
+        logger.info("Creating Kafka producer...");
+
+        KafkaProducer<String, String> producer = createProducer();
+
+
+        for(int i = 0; i < 10; i++) {
             // stream messages from queue into Kafka
             try {
-                logger.info(msgQueue.poll(6, TimeUnit.SECONDS));
+                String tweets = msgQueue.poll(5, TimeUnit.SECONDS);
+
+                logger.info("Retrieved the following tweets: " + tweets);
+
+                ProducerRecord<String, String> rec = new ProducerRecord<String, String>(topic, tweets);
+
+                producer.send(rec, new Callback() {
+                    public void onCompletion(RecordMetadata recordMetadata, Exception e) {
+                        if(e == null){
+                            logger.info("Producer sending message:\n" +
+                                            "\tTopic:     " + recordMetadata.topic() +"\n" +
+                                            "\tPartition: " + recordMetadata.partition() + "\n" +
+                                            "\tOffset:    " + recordMetadata.offset() + "\n" +
+                                            "\tTimestamp: " + recordMetadata.timestamp() + "\n");
+
+                        } else {
+                            logger.error("Exception encountered while producing message", e);
+                        }
+                    }
+                });
             } catch (InterruptedException e) {
+                logger.info("Application was interrupted, exiting...");
                 e.printStackTrace();
             }
         }
 
+        logger.info("Application completed, exiting...");
 
     }
 
@@ -66,7 +95,7 @@ public class TwitterProducer {
 
         // Optional: set up some followings and track terms
         List<Long> followings = Lists.newArrayList(1234L, 566788L);
-        List<String> terms = Lists.newArrayList("corona", "coronavirus", "COVID-19", "corona virus", "social distancing", "socialdistancing");
+        List<String> terms = Lists.newArrayList("skyrim");
         hosebirdEndpoint.followings(followings);
         hosebirdEndpoint.trackTerms(terms);
 
