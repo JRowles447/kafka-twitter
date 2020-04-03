@@ -1,9 +1,13 @@
 import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.errors.WakeupException;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Duration;
 import java.util.Arrays;
 import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
@@ -18,7 +22,37 @@ public class TwitterConsumer {
     }
 
     private void run() {
+        Logger logger = LoggerFactory.getLogger(TwitterConsumer.class.getName());
 
+        String bootstrapServers = "127.0.0.1:9092";
+        String groupId = "consumer_group_1";
+        String topic = "testing_tweets_topic";
+        CountDownLatch latch = new CountDownLatch(1);
+
+        logger.info("Creating consumer thread...");
+
+        TwitterConsumerRunnable consumerRunnable = new TwitterConsumerRunnable(bootstrapServers, topic, groupId, latch);
+
+        Thread consumerThread = new Thread(consumerRunnable);
+        consumerThread.start();
+
+        Runtime.getRuntime().addShutdownHook(new Thread( () -> {
+            logger.info("Caught shutdown hook!");
+            try {
+                latch.await();
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            logger.info("Consumer application exiting...");
+        }));
+
+        try {
+            latch.await();
+        } catch (InterruptedException e) {
+            logger.info("Application got interrupted!", e);
+        } finally {
+            logger.info("Application is closing...");
+        }
     }
 
     public class TwitterConsumerRunnable implements Runnable {
@@ -55,6 +89,25 @@ public class TwitterConsumer {
         }
 
         public void run() {
+            try {
+                while(true) {
+                    ConsumerRecords<String, String> record = consumer.poll(Duration.ofMillis(100L));
+
+                    // TODO send the records to elastic search
+                    for (ConsumerRecord<String, String> rec : record) {
+                        logger.info("Received record!" + "\n" +
+                                "\tKey:         " + rec.key() + "\n" +
+                                "\tValue:       " + rec.value() + "\n" +
+                                "\tPartition:   " + rec.partition() + "\n" +
+                                "\tOffset:      " + rec.offset() + "\n");
+                    }
+                }
+            } catch (WakeupException e) {
+                logger.info("Received shutdown signal!");
+            } finally {
+                consumer.close();
+                latch.countDown();
+            }
 
         }
 
